@@ -1,0 +1,97 @@
+# Esempio di blocco server per www.ldm4app.com con proxy al server IA
+# Posiziona questo blocco nel tuo nginx.conf o in /etc/nginx/sites-available/ldm4app
+
+upstream ia_backend {
+    server 127.0.0.1:5000;
+    keepalive 32;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name www.ldm4app.com ldm4app.com;
+
+    # Redirect a HTTPS
+    return 301 https://$server_name$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name www.ldm4app.com ldm4app.com;
+
+    # SSL certificates (genera con Certbot)
+    # sudo certbot certonly --nginx -d www.ldm4app.com
+    ssl_certificate /etc/letsencrypt/live/www.ldm4app.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/www.ldm4app.com/privkey.pem;
+
+    # SSL Best Practices
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    # Root del sito (cartella con ia.html, index.html, etc)
+    root /var/www/ldm4app;
+    index index.html;
+
+    # Permetti upload fino a 2GB (per i modelli)
+    client_max_body_size 2G;
+
+    # Serve file statici normalmente
+    location ~* \.(html|css|js|png|jpg|svg|json|ico|webmanifest)$ {
+        expires 1d;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # Proxy verso il server IA per richieste API
+    location /upload-model {
+        proxy_pass http://ia_backend/upload-model;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_request_buffering off;
+    }
+
+    location /infer {
+        proxy_pass http://ia_backend/infer;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
+
+    location /models/ {
+        proxy_pass http://ia_backend/models/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /health {
+        proxy_pass http://ia_backend/health;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+    }
+
+    # Default: serve ia.html e altri file statici
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Log
+    access_log /var/log/nginx/ldm4app_access.log;
+    error_log /var/log/nginx/ldm4app_error.log;
+}

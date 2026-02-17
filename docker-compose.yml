@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  ia-server:
+    build: .
+    container_name: ldm4app-ia-server
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./uploaded-models:/usr/src/app/uploaded-models
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
